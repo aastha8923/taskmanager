@@ -6,13 +6,15 @@ import com.logixgrid.taskmanager.repository.ProjectRepository;
 import com.logixgrid.taskmanager.repository.TaskRepository;
 import com.logixgrid.taskmanager.repository.TaskStatusHistoryRepository;
 import com.logixgrid.taskmanager.repository.UserRepository;
+import com.logixgrid.taskmanager.repository.TaskActivityHistoryRepository;
+
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.util.List;
+
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-
-import java.util.List;
 
 @Service
 public class TaskService {
@@ -21,14 +23,17 @@ public class TaskService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final TaskStatusHistoryRepository taskStatusHistoryRepository;
+    private final TaskActivityHistoryRepository taskActivityHistoryRepository;
 
     public TaskService(
             TaskRepository taskRepository,
             ProjectRepository projectRepository,
             UserRepository userRepository,
-            TaskStatusHistoryRepository taskStatusHistoryRepository) {
+            TaskStatusHistoryRepository taskStatusHistoryRepository,
+            TaskActivityHistoryRepository taskActivityHistoryRepository) {
 
         this.taskRepository = taskRepository;
+        this.taskActivityHistoryRepository = taskActivityHistoryRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.taskStatusHistoryRepository = taskStatusHistoryRepository;
@@ -59,8 +64,6 @@ public class TaskService {
             Long assignedUserId,
             String creatorEmail) {
 
-        // Validate relationships on the server instead of trusting
-        // client-supplied entity IDs.
         var project = projectRepository.findById(projectId)
                 .orElseThrow(() ->
                         new IllegalArgumentException("Project not found"));
@@ -72,9 +75,6 @@ public class TaskService {
         task.setId(null);
         task.setProject(project);
         task.setCreatedBy(creator);
-
-        // The server controls initial status so clients cannot create
-        // tasks that appear completed without going through the workflow.
         task.setStatus(TaskStatus.TODO);
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
@@ -82,8 +82,7 @@ public class TaskService {
         if (assignedUserId != null) {
             var assignee = userRepository.findById(assignedUserId)
                     .orElseThrow(() ->
-                            new IllegalArgumentException(
-                                    "Assigned user not found"));
+                            new IllegalArgumentException("Assigned user not found"));
 
             task.setAssignedTo(assignee);
         } else {
@@ -94,7 +93,7 @@ public class TaskService {
     }
 
     @Transactional
-    public Task updateTask(Long id, Task updatedTask) {
+    public Task updateTask(Long id, Task updatedTask, String adminEmail) {
         Task task = getTaskById(id);
 
         task.setTitle(updatedTask.getTitle());
@@ -102,8 +101,50 @@ public class TaskService {
         task.setPriority(updatedTask.getPriority());
         task.setDueDate(updatedTask.getDueDate());
 
-        // Keep status changes in a separate method so each transition
-        // is recorded consistently in the audit history.
+        // Update the project if one was supplied.
+        if (updatedTask.getProject() != null
+                && updatedTask.getProject().getId() != null) {
+
+            var project = projectRepository.findById(
+                    updatedTask.getProject().getId()
+            ).orElseThrow(() ->
+                    new IllegalArgumentException("Project not found"));
+
+            task.setProject(project);
+        }
+
+        // Record an activity when the assignee changes.
+        Long oldAssigneeId = task.getAssignedTo() == null
+                ? null : task.getAssignedTo().getId();
+
+        if (updatedTask.getAssignedTo() != null
+                && updatedTask.getAssignedTo().getId() != null) {
+
+            var assignee = userRepository.findById(
+                    updatedTask.getAssignedTo().getId()
+            ).orElseThrow(() ->
+                    new IllegalArgumentException("Assigned user not found"));
+
+            if (!assignee.getId().equals(oldAssigneeId)) {
+                TaskActivityHistory activity = new TaskActivityHistory();
+                activity.setTask(task);
+                activity.setActivityType("ASSIGNEE_CHANGED");
+                activity.setOldValue(task.getAssignedTo() == null
+                        ? "Unassigned"
+                        : task.getAssignedTo().getName());
+                activity.setNewValue(assignee.getName());
+
+                User changedBy = userRepository.findByEmail(adminEmail)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException("Admin not found"));
+
+                activity.setChangedBy(changedBy);
+                taskActivityHistoryRepository.save(activity);
+            }
+
+            task.setAssignedTo(assignee);
+        }
+
         task.setUpdatedAt(LocalDateTime.now());
 
         return taskRepository.save(task);
@@ -122,12 +163,11 @@ public class TaskService {
 
         Task task = getTaskById(id);
 
-        // Admins can update any task; regular users can update
-        // only tasks assigned to them.
+        // Admins can update any task; regular users can update only their tasks.
         if (!isAdmin &&
                 (task.getAssignedTo() == null ||
                         !task.getAssignedTo().getEmail().equalsIgnoreCase(userEmail))) {
-            throw new org.springframework.security.access.AccessDeniedException(
+            throw new AccessDeniedException(
                     "You can update only tasks assigned to you");
         }
 
@@ -139,7 +179,6 @@ public class TaskService {
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found"));
 
-        // Record the previous and new status for the task history.
         TaskStatusHistory history = new TaskStatusHistory();
         history.setTask(task);
         history.setPreviousStatus(task.getStatus());
@@ -160,8 +199,7 @@ public class TaskService {
 
         var assignee = userRepository.findById(assignedUserId)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Assigned user not found"));
+                        new IllegalArgumentException("Assigned user not found"));
 
         task.setAssignedTo(assignee);
         task.setUpdatedAt(LocalDateTime.now());
@@ -170,8 +208,6 @@ public class TaskService {
     }
 
     public List<Task> getTasksByProject(Long projectId) {
-        // Query the database directly instead of loading every task
-        // into memory and filtering the results in Java.
         if (!projectRepository.existsById(projectId)) {
             throw new IllegalArgumentException("Project not found");
         }
@@ -180,24 +216,46 @@ public class TaskService {
     }
 
     public boolean isOverdue(Task task) {
-        // Completed work should not appear in overdue-task reporting.
         return task.getDueDate() != null
                 && task.getDueDate().isBefore(LocalDate.now())
                 && task.getStatus() != TaskStatus.COMPLETED;
     }
 
     public List<TaskStatusHistory> getTaskStatusHistory(Long taskId) {
-        // Validate the task ID so a nonexistent task is not mistaken
-        // for a task that simply has no status changes yet.
         getTaskById(taskId);
 
         return taskStatusHistoryRepository
                 .findByTaskIdOrderByChangedAtDesc(taskId);
     }
 
+    // Admins can view any task's activity history.
+    // Regular users can view history only for tasks currently assigned to them.
+    public List<TaskActivityHistory> getTaskActivityHistory(
+            Long taskId,
+            String userEmail,
+            boolean isAdmin) {
+
+        Task task = getTaskById(taskId);
+
+        if (!isAdmin &&
+                (task.getAssignedTo() == null ||
+                        !task.getAssignedTo().getEmail().equalsIgnoreCase(userEmail))) {
+            throw new AccessDeniedException(
+                    "You are not authorized to view this task's activity history.");
+        }
+
+        return taskActivityHistoryRepository
+                .findByTaskIdOrderByChangedAtDesc(taskId);
+    }
+
     @Transactional
     public void deleteTask(Long id) {
         Task task = getTaskById(id);
+
+        // Delete histories before deleting the task.
+        taskStatusHistoryRepository.deleteByTaskId(id);
+        taskActivityHistoryRepository.deleteByTaskId(id);
+
         taskRepository.delete(task);
     }
 }

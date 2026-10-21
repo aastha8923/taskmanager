@@ -1,4 +1,3 @@
-
 package com.logixgrid.taskmanager.repository;
 
 import com.logixgrid.taskmanager.entity.Task;
@@ -10,4 +9,6 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     List<Task> findByProjectId(Long projectId);
     List<Task> findByAssignedToId(Long userId);
+
+    long countByProjectId(Long projectId);
 }

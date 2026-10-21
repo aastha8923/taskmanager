@@ -11,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.logixgrid.taskmanager.entity.TaskStatusHistory;
+import com.logixgrid.taskmanager.entity.TaskActivityHistory;
 
 import java.util.List;
 import java.util.Map;
@@ -63,13 +64,19 @@ public class TaskController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Task> updateTask(
             @PathVariable Long id,
-            @Valid @RequestBody Task task) {
-        return ResponseEntity.ok(taskService.updateTask(id, task));
+            @Valid @RequestBody Task task,
+            Authentication authentication) {
+
+        return ResponseEntity.ok(
+                taskService.updateTask(id, task, authentication.getName())
+        );
     }
+
 
 
 
@@ -123,5 +130,25 @@ public class TaskController {
         return ResponseEntity.ok(
                 taskService.getTaskStatusHistory(id));
     }
+
+
+    @GetMapping("/{id}/activity-history")
+    public ResponseEntity<List<TaskActivityHistory>> getTaskActivityHistory(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority ->
+                        authority.getAuthority().equals("ROLE_ADMIN"));
+
+        return ResponseEntity.ok(
+                taskService.getTaskActivityHistory(
+                        id,
+                        authentication.getName(),
+                        isAdmin
+                )
+        );
+    }
+
 
 }

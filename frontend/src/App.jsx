@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import './App.css'
 
 const API = 'http://localhost:8080/api'
@@ -16,18 +16,35 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [tasks, setTasks] = useState([])
   const [projects, setProjects] = useState([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [projectFilter, setProjectFilter] = useState('ALL')
+  const [userFilter, setUserFilter] = useState('ALL')
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
+  const [projectSearch, setProjectSearch] = useState('')
+
+  const [users, setUsers] = useState([]);
+  const [expandedProjectId, setExpandedProjectId] = useState(null)
   const [activeTab, setActiveTab] = useState('Overview')
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [projectDueDate, setProjectDueDate] = useState('')
+  const [editingProjectId, setEditingProjectId] = useState(null)
+  const [isEditingProject, setIsEditingProject] = useState(false)
   const [showTaskForm, setShowTaskForm] = useState(false)
+  const [editingTaskId, setEditingTaskId] = useState(null)
+  const [isEditingTask, setIsEditingTask] = useState(false)
   const [taskTitle, setTaskTitle] = useState('')
   const [taskDescription, setTaskDescription] = useState('')
   const [taskProjectId, setTaskProjectId] = useState('')
   const [taskAssignedUserId, setTaskAssignedUserId] = useState('')
   const [taskDueDate, setTaskDueDate] = useState('')
   const [taskPriority, setTaskPriority] = useState('MEDIUM')
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
+  const [taskHistory, setTaskHistory] = useState({})
+  const [taskActivityHistory, setTaskActivityHistory] = useState({});
+  const [historyLoading, setHistoryLoading] = useState(false)
 
 
   // Authenticate an existing user and save the JWT for API requests.
@@ -106,6 +123,7 @@ function App() {
   }
 
   // Fetch dashboard data using the currently authenticated user's token.
+
   async function loadDashboard() {
     if (!token) return
 
@@ -127,10 +145,82 @@ function App() {
 
       if (taskResponse.ok) setTasks(await taskResponse.json())
       if (projectResponse.ok) setProjects(await projectResponse.json())
+
+      // Load registered users for the admin's task assignment dropdown.
+      if (userRole === 'ADMIN') {
+        const userResponse = await fetch(`${API}/users`, { headers })
+
+        if (userResponse.ok) {
+          setUsers(await userResponse.json())
+        } else {
+          setUsers([])
+        }
+      } else {
+        setUsers([])
+      }
+
     } catch {
       setError('Could not load data. Check that the backend is running.')
     }
   }
+
+  async function loadTaskHistory(taskId) {
+    setHistoryLoading(true)
+
+    try {
+      const response = await fetch(`${API}/tasks/${taskId}/history`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to load task history')
+      }
+
+      const history = await response.json()
+
+      setTaskHistory((prev) => ({
+        ...prev,
+        [taskId]: history,
+      }))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  async function loadTaskActivityHistory(taskId) {
+    try {
+      const response = await fetch(
+          `${API}/tasks/${taskId}/activity-history`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to load activity history');
+      }
+
+      const activities = await response.json();
+
+      setTaskActivityHistory((prev) => ({
+        ...prev,
+        [taskId]: activities,
+      }));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+
+
+
+
   useEffect(() => {
     if (token) {
       loadDashboard()
@@ -153,6 +243,72 @@ function App() {
     setEmail('')
     setPassword('')
   }
+  // Populates the project form with existing details so the admin can edit the selected project.
+  function startEditingProject(project) {
+    setEditingProjectId(project.id)
+    setProjectName(project.name || '')
+    setProjectDescription(project.description || '')
+    setProjectDueDate(project.dueDate || '')
+    setIsEditingProject(true)
+    setShowProjectForm(true)
+  }
+
+  // Populate the task form with the selected task's existing details.
+  function startEditingTask(task) {
+    setEditingTaskId(task.id)
+    setTaskTitle(task.title || '')
+    setTaskDescription(task.description || '')
+    setTaskProjectId(String(task.project?.id ?? task.projectId ?? ''))
+    setTaskAssignedUserId(
+        String(task.assignedTo?.id ?? task.assignedUserId ?? '')
+    )
+    setTaskDueDate(task.dueDate || '')
+    setTaskPriority(task.priority || 'MEDIUM')
+    setIsEditingTask(true)
+    setShowTaskForm(true)
+    setError('')
+  }
+
+
+
+  // Updates an existing project with the edited details and refreshes the dashboard.
+  async function updateProject(event) {
+    event.preventDefault()
+    setError('')
+
+    try {
+      const response = await fetch(`${API}/projects/${editingProjectId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: projectName,
+          description: projectDescription,
+          dueDate: projectDueDate || null,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not update project.')
+      }
+
+      setShowProjectForm(false)
+      setIsEditingProject(false)
+      setEditingProjectId(null)
+      setProjectName('')
+      setProjectDescription('')
+      setProjectDueDate('')
+
+      await loadDashboard()
+    } catch (err) {
+      setError(err.message || 'Could not update project.')
+    }
+  }
+
 
   // Allow administrators to create projects through the backend API.
   async function createProject(event) {
@@ -190,17 +346,56 @@ function App() {
   }
 
 
+  // Delete a project (Admin only).
+  async function deleteProject(projectId, projectName) {
+    const confirmed = window.confirm(
+        `Are you sure you want to delete "${projectName}"?`
+    )
+
+    if (!confirmed) return
+
+    setError('')
+
+    try {
+      const response = await fetch(`${API}/projects/${projectId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const message = await response.text()
+
+        throw new Error(
+            message || `Could not delete project (HTTP ${response.status}).`
+        )
+      }
+
+      await loadDashboard()
+    } catch (err) {
+      setError(err.message || 'Could not delete project.')
+    }
+  }
+
+
+
   // Create a task for a selected project and assign it to a registered user.
   // The user ID is entered by the admin because this app does not currently expose a users-list endpoint.
+
   async function createTask(event) {
     event.preventDefault()
     setError('')
 
     try {
-      const response = await fetch(
-          `${API}/tasks?projectId=${Number(taskProjectId)}&assignedUserId=${Number(taskAssignedUserId)}`,
-          {
-        method: 'POST',
+      const isEditing = isEditingTask
+
+      const url = isEditing
+          ? `${API}/tasks/${editingTaskId}?projectId=${Number(taskProjectId)}&assignedUserId=${Number(taskAssignedUserId)}`
+          : `${API}/tasks?projectId=${Number(taskProjectId)}&assignedUserId=${Number(taskAssignedUserId)}`
+
+      const response = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
@@ -211,13 +406,19 @@ function App() {
           priority: taskPriority,
           dueDate: taskDueDate || null,
           project: { id: Number(taskProjectId) },
-          assignedTo: taskAssignedUserId ? { id: Number(taskAssignedUserId) } : null,
+          assignedTo: taskAssignedUserId
+              ? { id: Number(taskAssignedUserId) }
+              : null,
         }),
       })
 
       const data = await response.json().catch(() => ({}))
+
       if (!response.ok) {
-        throw new Error(data.message || `Could not create task (HTTP ${response.status}).`)
+        throw new Error(
+            data.message ||
+            `Could not ${isEditing ? 'update' : 'create'} task (HTTP ${response.status}).`
+        )
       }
 
       setTaskTitle('')
@@ -227,11 +428,15 @@ function App() {
       setTaskDueDate('')
       setTaskPriority('MEDIUM')
       setShowTaskForm(false)
+      setIsEditingTask(false)
+      setEditingTaskId(null)
+
       await loadDashboard()
     } catch (err) {
-      setError(err.message || 'Could not create task.')
+      setError(err.message || 'Could not save task.')
     }
   }
+
 
   // Let an authenticated user update task progress; the backend enforces assignment permissions.
   async function updateTaskStatus(taskId, status) {
@@ -253,6 +458,66 @@ function App() {
       setError(err.message || 'Could not update task status.')
     }
   }
+
+  // Delete a task after the admin confirms the action.
+  async function deleteTask(taskId, taskTitle) {
+    const confirmed = window.confirm(
+        `Are you sure you want to delete "${taskTitle}"?`
+    )
+
+    if (!confirmed) return
+
+    setError('')
+
+    try {
+      const response = await fetch(`${API}/tasks/${taskId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(
+            data.message || `Could not delete task (HTTP ${response.status}).`
+        )
+      }
+
+      await loadDashboard()
+    } catch (err) {
+      setError(err.message || 'Could not delete task.')
+    }
+  }
+
+
+  // Filter tasks by title or description based on the search input.
+
+  const visibleTasks = (
+      activeTab === 'My Tasks' ? tasks : tasks.slice(0, 5)
+  ).filter((task) => {
+    const query = searchQuery.toLowerCase().trim()
+
+    const matchesSearch =
+        task.title?.toLowerCase().includes(query) ||
+        task.description?.toLowerCase().includes(query)
+
+    const matchesStatus =
+        statusFilter === 'ALL' || task.status === statusFilter
+
+
+    const matchesProject =
+        projectFilter === 'ALL' ||
+        String(task.project?.id) === projectFilter
+
+    const matchesUser =
+        userFilter === 'ALL' ||
+        String(task.assignedTo?.id) === userFilter
+
+    return matchesSearch && matchesStatus && matchesProject && matchesUser
+
+  })
+
 
   // Display the existing dashboard after authentication.
   if (token) {
@@ -319,32 +584,43 @@ function App() {
               <div className="welcome-art">✓</div>
             </section>
 
+
             <section className="stats-grid">
               <div className="stat-card">
-                <span>Total projects</span>
-                <strong>{projects.length}</strong>
-                <small>Projects in workspace</small>
-              </div>
-              <div className="stat-card">
-                <span>Total tasks</span>
+                <span>Total Tasks</span>
                 <strong>{tasks.length}</strong>
                 <small>Tasks across projects</small>
               </div>
+
               <div className="stat-card">
-                <span>In progress</span>
-                <strong>
-                  {tasks.filter(t => t.status === 'IN_PROGRESS').length}
-                </strong>
-                <small>Currently being worked on</small>
-              </div>
-              <div className="stat-card">
-                <span>Completed</span>
+                <span>Completed Tasks</span>
                 <strong>
                   {tasks.filter(t => t.status === 'COMPLETED').length}
                 </strong>
                 <small>Tasks finished</small>
               </div>
+
+              <div className="stat-card">
+                <span>Pending Tasks</span>
+                <strong>
+                  {tasks.filter(t => t.status !== 'COMPLETED').length}
+                </strong>
+                <small>Tasks not yet completed</small>
+              </div>
+
+              <div className="stat-card">
+                <span>Overdue Tasks</span>
+                <strong>
+                  {tasks.filter(t =>
+                      t.status !== 'COMPLETED' &&
+                      t.dueDate &&
+                      new Date(t.dueDate) < new Date(new Date().toDateString())
+                  ).length}
+                </strong>
+                <small>Past due date and not completed</small>
+              </div>
             </section>
+
 
             <section className="content-card">
               <div className="section-heading">
@@ -357,6 +633,65 @@ function App() {
                             : 'Recent tasks'}
                   </h2>
                   <p>Live data from your Task Management API</p>
+
+
+                  {activeTab !== 'Projects' && (
+                      <div className="task-filters">
+                        <div className="task-search">
+                          <input
+                              type="text"
+                              placeholder="Search tasks"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                          />
+                        </div>
+
+                        <select
+                            className="task-filter-select"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            aria-label="Filter tasks by status"
+                        >
+                          <option value="ALL">All statuses</option>
+                          <option value="TODO">To Do</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="COMPLETED">Completed</option>
+                          <option value="BLOCKED">Blocked</option>
+                        </select>
+
+                        <select
+                            className="task-filter-select"
+                            value={projectFilter}
+                            onChange={(e) => setProjectFilter(e.target.value)}
+                        >
+                          <option value="ALL">All Projects</option>
+                          {projects.map((project) => (
+                              <option key={project.id} value={String(project.id)}>
+                                {project.name}
+                              </option>
+                          ))}
+                        </select>
+
+                        {userRole === 'ADMIN' && (
+                            <select
+                                className="task-filter-select"
+                                value={userFilter}
+                                onChange={(e) => setUserFilter(e.target.value)}
+                            >
+                              <option value="ALL">All Users</option>
+                              {users.map((user) => (
+                                  <option key={user.id} value={String(user.id)}>
+                                    {user.name || user.email}
+                                  </option>
+                              ))}
+                            </select>
+                        )}
+
+
+                      </div>
+                  )}
+
+
                 </div>
 
                 <div className="section-actions">
@@ -387,8 +722,11 @@ function App() {
               {activeTab === 'Projects' &&
                   userRole === 'ADMIN' &&
                   showProjectForm && (
-                      <form className="project-form" onSubmit={createProject}>
-                        <h3>Create a new project</h3>
+                      <form
+                          className="project-form"
+                          onSubmit={isEditingProject ? updateProject : createProject}
+                      >
+                        <h3>{isEditingProject ? 'Edit Project' : 'Create a new project'}</h3>
 
                         <label htmlFor="projectName">Project name</label>
                         <input
@@ -419,14 +757,14 @@ function App() {
                         />
 
                         <button className="primary-button" type="submit">
-                          Create Project
+                          {isEditingProject ? 'Update Project' : 'Create Project'}
                         </button>
                       </form>
                   )}
 
               {activeTab !== 'Projects' && userRole === 'ADMIN' && showTaskForm && (
                   <form className="project-form" onSubmit={createTask}>
-                    <h3>Create and assign a task</h3>
+                    <h3>{isEditingTask ? 'Edit Task' : 'Create and assign a task'}</h3>
 
                     <label htmlFor="taskTitle">Task title</label>
                     <input
@@ -462,16 +800,25 @@ function App() {
                       ))}
                     </select>
 
-                    <label htmlFor="taskAssignedUserId">Assign to user ID</label>
-                    <input
+
+                    <label htmlFor="taskAssignedUserId">Assign to user</label>
+                    <select
                         id="taskAssignedUserId"
-                        type="number"
-                        min="1"
                         value={taskAssignedUserId}
-                        onChange={e => setTaskAssignedUserId(e.target.value)}
-                        placeholder="Enter registered user's ID"
+                        onChange={e => {
+                          console.log("Selected user ID:", e.target.value)
+                          setTaskAssignedUserId(e.target.value)
+                        }}
                         required
-                    />
+                    >
+                      <option value="">Select a user</option>
+                      {users.map(user => (
+                          <option key={user.id} value={user.id}>
+                            {user.name} ({user.email})
+                          </option>
+                      ))}
+                    </select>
+
                     <small>Use the registered user's database ID (for example, 3).</small>
 
                     <label htmlFor="taskPriority">Priority</label>
@@ -493,23 +840,130 @@ function App() {
                         onChange={e => setTaskDueDate(e.target.value)}
                     />
 
-                    <button className="primary-button" type="submit">Create Task</button>
+                    <button className="primary-button" type="submit">
+                      {isEditingTask ? 'Update Task' : 'Create Task'}
+                    </button>
                   </form>
               )}
 
+
+              {activeTab === 'Projects' && (
+                  <div className="task-filters">
+                    <div className="task-search">
+                      <input
+                          type="text"
+                          placeholder="Search projects"
+                          value={projectSearch}
+                          onChange={(e) => setProjectSearch(e.target.value)}
+                      />
+                    </div>
+
+
+                  </div>
+              )}
+
+
+
               {activeTab === 'Projects' ? (
-                  projects.length ? (
-                      projects.map(project => (
-                          <div className="list-row" key={project.id}>
-                            <div className="row-icon project-icon">▣</div>
-                            <div className="row-details">
-                              <strong>{project.name}</strong>
-                              <span>{project.description || 'No description'}</span>
+                  projects.filter((project) => {
+                    const query = projectSearch.toLowerCase().trim()
+
+                    const matchesSearch =
+                        project.name?.toLowerCase().includes(query) ||
+                        project.description?.toLowerCase().includes(query)
+
+                    return matchesSearch
+                  }).length ? (
+                      projects.filter((project) => {
+                        const query = projectSearch.toLowerCase().trim()
+
+                        const matchesSearch =
+                            project.name?.toLowerCase().includes(query) ||
+                            project.description?.toLowerCase().includes(query)
+
+                        return matchesSearch
+                      }).map(project => (
+
+                          <>
+                            <div className="list-row" key={project.id}>
+                              <div className="row-icon project-icon">▣</div>
+
+
+
+
+
+
+                              <div className="row-details">
+                                <div className="project-title-line">
+                                  <strong>{project.name}</strong>
+
+                                  <button
+                                      type="button"
+                                      className="project-expand-arrow"
+                                      title={expandedProjectId === project.id ? 'Hide details' : 'View details'}
+                                      aria-label="Toggle project details"
+                                      aria-expanded={expandedProjectId === project.id}
+                                      onClick={() =>
+                                          setExpandedProjectId(
+                                              expandedProjectId === project.id ? null : project.id
+                                          )
+                                      }
+                                  >
+                                    {expandedProjectId === project.id ? '⌃' : '⌄'}
+                                  </button>
+                                </div>
+
+                                <span>{project.description || 'No description'}</span>
+                              </div>
+
+                              <span className="status-pill">
+    {project.status || 'PLANNED'}
+  </span>
+
+
+
+                              {userRole === 'ADMIN' && (
+                                  <>
+                                    <button
+                                        type="button"
+                                        className="icon-button edit-icon-button"
+                                        title="Edit"
+                                        aria-label="Edit project"
+                                        onClick={() => startEditingProject(project)}
+                                    >
+                                      ✎
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="icon-button delete-icon-button"
+                                        title="Delete"
+                                        aria-label="Delete project"
+                                        onClick={() => deleteProject(project.id, project.name)}
+                                    >
+                                      🗑
+                                    </button>
+                                  </>
+                              )}
+
+
                             </div>
-                            <span className="status-pill">
-                      {project.status || 'PLANNED'}
-                    </span>
-                          </div>
+                            {expandedProjectId === project.id && (
+                                <div className="project-details-panel">
+                                  <p><strong>Project ID:</strong> {project.id}</p>
+                                  <p><strong>Name:</strong> {project.name}</p>
+                                  <p><strong>Description:</strong> {project.description || 'No description available'}</p>
+                                  <p><strong>Status:</strong> {project.status || 'Not specified'}</p>
+                                  <p><strong>Due Date:</strong> {project.dueDate || 'No due date'}</p>
+                                  <p>
+                                    <strong>Total Tasks:</strong>{' '}
+                                    {tasks.filter(
+                                        (task) => Number(task.project?.id) === Number(project.id)
+                                    ).length}
+                                  </p>
+                                </div>
+                            )}
+                          </>
                       ))
                   ) : (
                       <p className="empty-state">
@@ -517,45 +971,196 @@ function App() {
                       </p>
                   )
               ) : (
-                  (activeTab === 'My Tasks' ? tasks : tasks.slice(0, 5)).length ? (
-                      (activeTab === 'My Tasks' ? tasks : tasks.slice(0, 5)).map(task => (
-                          <div className="list-row" key={task.id}>
-                            <div
-                                className={`row-icon ${
-                                    task.status === 'COMPLETED' ? 'done-icon' : 'task-icon'
-                                }`}
-                            >
-                              {task.status === 'COMPLETED' ? '✓' : '◷'}
+                  visibleTasks.length ? (
+                      visibleTasks.map(task => (
+                          <Fragment key={task.id}>
+                            <div className="list-row">
+                              <div
+                                  className={`row-icon ${
+                                      task.status === 'COMPLETED' ? 'done-icon' : 'task-icon'
+                                  }`}
+                              >
+                                {task.status === 'COMPLETED' ? '✓' : '◷'}
+                              </div>
+
+                              <div className="row-details">
+                                <div className="project-title-line">
+                                  <strong>{task.title}</strong>
+
+
+                                      <button
+                                          type="button"
+                                          className="project-expand-arrow"
+                                          onClick={() => {
+                                            if (expandedTaskId === task.id) {
+                                              setExpandedTaskId(null)
+                                            } else {
+                                              setExpandedTaskId(task.id)
+                                              loadTaskHistory(task.id)
+                                              loadTaskActivityHistory(task.id)
+                                            }
+                                          }}
+                                          aria-label={
+                                            expandedTaskId === task.id
+                                                ? 'Collapse task details'
+                                                : 'Expand task details'
+                                          }
+                                          aria-expanded={expandedTaskId === task.id}
+                                      >
+                                        {expandedTaskId === task.id ? '⌃' : '⌄'}
+                                      </button>
+                                </div>
+                                <span>{task.description || 'No description'}</span>
+                              </div>
+
+                              <span
+                                  className={`status-pill ${
+                                      task.status === 'COMPLETED'
+                                          ? 'completed'
+                                          : task.status === 'IN_PROGRESS'
+                                              ? 'progress'
+                                              : task.status === 'BLOCKED'
+                                                  ? 'blocked'
+                                                  : ''
+                                  }`}
+                              >
+                                {(task.status || 'TODO').replace('_', ' ')}
+                              </span>
+
+                              <select
+                                  className="task-status-select"
+                                  aria-label={`Update status for ${task.title}`}
+                                  value={task.status || 'TODO'}
+                                  onChange={e => updateTaskStatus(task.id, e.target.value)}
+                              >
+                                <option value="TODO">To do</option>
+                                <option value="IN_PROGRESS">In progress</option>
+                                <option value="COMPLETED">Completed</option>
+                                <option value="BLOCKED">Blocked</option>
+                              </select>
+
+                              {userRole === 'ADMIN' && (
+                                  <>
+                                    <button
+                                        type="button"
+                                        className="icon-button edit-icon-button"
+                                        title="Edit task"
+                                        aria-label="Edit task"
+                                        onClick={() => startEditingTask(task)}
+                                    >
+                                      ✎
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="icon-button delete-icon-button"
+                                        title="Delete task"
+                                        aria-label="Delete task"
+                                        onClick={() => deleteTask(task.id, task.title)}
+                                    >
+                                      🗑
+                                    </button>
+                                  </>
+                              )}
+
                             </div>
-                            <div className="row-details">
-                              <strong>{task.title}</strong>
-                              <span>
-                        {task.project?.name || 'No project'} · Due{' '}
-                                {task.dueDate || 'Not set'}
-                      </span>
-                            </div>
-                            <span
-                                className={`status-pill ${
-                                    task.status === 'COMPLETED'
-                                        ? 'completed'
-                                        : task.status === 'IN_PROGRESS'
-                                            ? 'progress'
-                                            : ''
-                                }`}
-                            >
-                      {(task.status || 'TODO').replace('_', ' ')}
-                    </span>
-                            <select
-                                className="task-status-select"
-                                aria-label={`Update status for ${task.title}`}
-                                value={task.status || 'TODO'}
-                                onChange={e => updateTaskStatus(task.id, e.target.value)}
-                            >
-                              <option value="TODO">To do</option>
-                              <option value="IN_PROGRESS">In progress</option>
-                              <option value="COMPLETED">Completed</option>
-                            </select>
-                          </div>
+
+
+                            {expandedTaskId === task.id && (
+                                <div className="project-expanded-details">
+                                  <div>
+                                    <span>Task ID</span>
+                                    <strong>{task.id}</strong>
+                                  </div>
+
+                                  <div>
+                                    <span>Project ID</span>
+                                    <strong>{task.project?.id ?? task.projectId ?? 'N/A'}</strong>
+                                  </div>
+
+                                  <div>
+                                    <span>Priority</span>
+                                    <strong>{task.priority || 'N/A'}</strong>
+                                  </div>
+
+                                  <div>
+                                    <span>Due Date</span>
+                                    <strong>{task.dueDate || 'Not set'}</strong>
+                                  </div>
+
+                                  <div>
+                                    <span>Assigned To</span>
+                                    <strong>{task.assignedTo?.name || 'Unassigned'}</strong>
+                                  </div>
+
+                                  <div className="task-status-history">
+                                    <span>Status History</span>
+
+                                    {historyLoading && !taskHistory[task.id] && (
+                                        <p>Loading status history...</p>
+                                    )}
+
+                                    {!historyLoading &&
+                                        taskHistory[task.id]?.length === 0 && (
+                                            <p>No status changes recorded yet.</p>
+                                        )}
+
+                                    {taskHistory[task.id]?.map((entry, index) => (
+                                        <div key={entry.id ?? index} className="history-entry">
+                                          <strong>
+                                            {entry.previousStatus || 'CREATED'} → {entry.newStatus}
+                                          </strong>
+
+                                          <span>
+            Changed by:{' '}
+                                            {entry.changedBy?.name ||
+                                                entry.changedBy?.email ||
+                                                'Unknown'}
+          </span>
+
+                                          <span>
+            {entry.changedAt
+                ? new Date(entry.changedAt).toLocaleString()
+                : ''}
+          </span>
+                                        </div>
+                                    ))}
+                                  </div>
+                                  <div className="task-status-history">
+                                    <span>Assignee Activity History</span>
+
+                                    {taskActivityHistory[task.id]?.length === 0 && (
+                                        <p>No assignee changes recorded yet.</p>
+                                    )}
+
+                                    {taskActivityHistory[task.id]?.map((entry, index) => (
+                                        <div key={entry.id ?? index} className="history-entry">
+                                          <strong>
+                                            {entry.activityType === 'ASSIGNEE_CHANGED'
+                                                ? 'Assignee changed'
+                                                : entry.activityType}
+                                          </strong>
+
+                                          <span>
+        {entry.oldValue || 'Unassigned'} → {entry.newValue || 'Unassigned'}
+      </span>
+
+                                          <span>
+        Changed by: {entry.changedBy?.name || entry.changedBy?.email || 'Unknown'}
+      </span>
+
+                                          <span>
+        {entry.changedAt
+            ? new Date(entry.changedAt).toLocaleString()
+            : ''}
+      </span>
+                                        </div>
+                                    ))}
+                                  </div>
+                                </div>
+                            )}
+
+                          </Fragment>
                       ))
                   ) : (
                       <p className="empty-state">
