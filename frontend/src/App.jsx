@@ -574,7 +574,8 @@ function App() {
             </header>
 
             {error && <div className="error-banner">{error}</div>}
-
+            {activeTab === 'Overview' && (
+                <>
             <section className="welcome-card">
               <div>
                 <p className="welcome-tag">YOUR WORKSPACE</p>
@@ -620,7 +621,8 @@ function App() {
                 <small>Past due date and not completed</small>
               </div>
             </section>
-
+                </>
+            )}
 
             <section className="content-card">
               <div className="section-heading">
@@ -635,7 +637,7 @@ function App() {
                   <p>Live data from your Task Management API</p>
 
 
-                  {activeTab !== 'Projects' && (
+                  {activeTab === 'My Tasks' && (
                       <div className="task-filters">
                         <div className="task-search">
                           <input
@@ -988,27 +990,27 @@ function App() {
                                   <strong>{task.title}</strong>
 
 
-                                      <button
-                                          type="button"
-                                          className="project-expand-arrow"
-                                          onClick={() => {
-                                            if (expandedTaskId === task.id) {
-                                              setExpandedTaskId(null)
-                                            } else {
-                                              setExpandedTaskId(task.id)
-                                              loadTaskHistory(task.id)
-                                              loadTaskActivityHistory(task.id)
-                                            }
-                                          }}
-                                          aria-label={
-                                            expandedTaskId === task.id
-                                                ? 'Collapse task details'
-                                                : 'Expand task details'
-                                          }
-                                          aria-expanded={expandedTaskId === task.id}
-                                      >
-                                        {expandedTaskId === task.id ? '⌃' : '⌄'}
-                                      </button>
+                                  <button
+                                      type="button"
+                                      className="project-expand-arrow"
+                                      onClick={() => {
+                                        if (expandedTaskId === task.id) {
+                                          setExpandedTaskId(null)
+                                        } else {
+                                          setExpandedTaskId(task.id)
+                                          loadTaskHistory(task.id)
+                                          loadTaskActivityHistory(task.id)
+                                        }
+                                      }}
+                                      aria-label={
+                                        expandedTaskId === task.id
+                                            ? 'Collapse task details'
+                                            : 'Expand task details'
+                                      }
+                                      aria-expanded={expandedTaskId === task.id}
+                                  >
+                                    {expandedTaskId === task.id ? '⌃' : '⌄'}
+                                  </button>
                                 </div>
                                 <span>{task.description || 'No description'}</span>
                               </div>

@@ -182,7 +182,7 @@ button {
   color: #a3aaba;
 }
 
-/* Primary login and registration buttons */
+
 .sign-in-button,
 .primary-button {
   border: 0;
@@ -215,7 +215,7 @@ button {
   cursor: wait;
 }
 
-/* Sign Up / Sign In toggle */
+
 .login-help {
   margin-top: 20px;
   text-align: center;
@@ -253,7 +253,7 @@ button {
   padding-top: 24px;
 }
 
-/* Dashboard */
+
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -622,7 +622,7 @@ button {
   }
 }
 
-/* Mobile layout */
+
 @media (max-width: 580px) {
   .login-panel {
     padding: 25px 22px;
@@ -719,7 +719,7 @@ button {
   }
 }
 
-/* Keep the section heading buttons neatly aligned. */
+
 .section-actions {
   display: flex;
   align-items: center;
@@ -727,7 +727,7 @@ button {
   flex-wrap: wrap;
 }
 
-/* Give the project form its own layout and spacing. */
+
 .project-form {
   display: flex;
   flex-direction: column;
@@ -789,9 +789,7 @@ button {
   }
 }
 
-/* Compact icon buttons for project actions */
 
-/* Minimal project action icons */
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -814,7 +812,7 @@ button {
   transform: none;
 }
 
-/* Expand and collapse arrow */
+
 .list-row > .icon-button:not(.edit-icon-button):not(.delete-icon-button) {
   width: 24px;
   font-size: 17px;
@@ -822,19 +820,19 @@ button {
   color: #64748b;
 }
 
-/* Edit icon */
+
 .edit-icon-button {
   color: #5265d9;
   font-size: 18px;
 }
 
-/* Delete icon */
+
 .delete-icon-button {
   color: #e05252;
   font-size: 18px;
 }
 
-/* Project row layout */
+
 .list-row {
   display: flex;
   align-items: center;
@@ -842,13 +840,13 @@ button {
   flex-wrap: wrap;
 }
 
-/* Keep project name and description together */
+
 .list-row .row-details {
   flex: 1;
   min-width: 180px;
 }
 
-/* Remove the box around the expand arrow */
+
 .list-row > .icon-button:not(.edit-icon-button):not(.delete-icon-button) {
   width: 28px;
   height: 28px;
@@ -860,13 +858,13 @@ button {
   color: #64748b;
 }
 
-/* Keep the arrow simple on hover */
+
 .list-row > .icon-button:not(.edit-icon-button):not(.delete-icon-button):hover {
   background: #f1f5f9;
   transform: none;
 }
 
-/* Make the project status and action buttons stay in sequence */
+
 .list-row .status-pill {
   order: 1;
 }
@@ -883,7 +881,7 @@ button {
   order: 4;
 }
 
-/* Project details should be a separate, compact panel */
+
 .project-details-panel {
   width: 100%;
   box-sizing: border-box;
@@ -908,7 +906,7 @@ button {
 
 
 .project-title-line {
-  display: flex;              /* block-level flex, not inline-flex */
+  display: flex;
   align-items: center;
   gap: 8px;
   margin: 0 0 4px;
@@ -954,12 +952,12 @@ button {
   outline-offset: 2px;
 }
 
-/* Rotate to point up when expanded */
+
 .project-expand-arrow[aria-expanded="true"] svg {
   transform: rotate(180deg);
 }
 
-/* Expanded task details */
+
 .project-expanded-details {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -992,7 +990,7 @@ button {
   overflow-wrap: anywhere;
 }
 
-/* Align the task title and expand arrow */
+
 .project-title-line {
   display: flex;
   align-items: center;
@@ -1025,7 +1023,7 @@ button {
   color: #5265d9;
 }
 
-/* Keep details readable on smaller screens */
+
 @media (max-width: 900px) {
   .project-expanded-details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1062,7 +1060,7 @@ button {
   min-height: 72px;
 }
 
-/* Task status history layout */
+
 .task-status-history {
   grid-column: 1 / -1;
   display: flex;
@@ -1245,4 +1243,5 @@ button {
 .project-filter-options button:hover {
   background: #eff8ff;
 }
+
 
